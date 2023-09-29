@@ -9,14 +9,16 @@ import random
 import base64
 from pathlib import Path
 from dotenv import dotenv_values
-# tg pusher config
-#USE_TG = False  # 如果启用tg推送 要设置为True
-#TG_BOT_TOKEN = ''  # 通过 @BotFather 申请获得，示例：1077xxx4424:AAFjv0FcqxxxxxxgEMGfi22B4yh15R5uw
-#TG_USER_ID = ''  # 用户、群组或频道 ID，示例：129xxx206
-#TG_API_HOST = 'api.telegram.org'  # 自建 API 反代地址，供网络环境无法访问时使用，网络正常则保持默认
 
 parent_dir = Path(__file__).resolve().parent
 config = dotenv_values(f"/opt/oci/.env")
+
+# tg pusher config
+USE_TG = config["USE_TG"]  # 如果启用tg推送 要设置为True
+TG_BOT_TOKEN = config["TG_BOT_TOKEN"]  # 通过 @BotFather 申请获得，示例：1077xxx4424:AAFjv0FcqxxxxxxgEMGfi22B4yh15R5uw
+TG_USER_ID = config["TG_USER_ID"]  # 用户、群组或频道 ID，示例：129xxx206
+TG_API_HOST = config["TG_API_HOST"]  # 自建 API 反代地址，供网络环境无法访问时使用
+
 
 def telegram(desp):
     data = (('chat_id', TG_USER_ID), ('text', '🐢甲骨文ARM抢注脚本为您播报🐢 \n\n' + desp))
