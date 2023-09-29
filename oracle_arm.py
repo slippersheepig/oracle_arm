@@ -16,7 +16,7 @@ from dotenv import dotenv_values
 #TG_API_HOST = 'api.telegram.org'  # 自建 API 反代地址，供网络环境无法访问时使用，网络正常则保持默认
 
 parent_dir = Path(__file__).resolve().parent
-config = dotenv_values(f"{parent_dir}/.env")
+config = dotenv_values(f"/opt/oci/.env")
 
 def telegram(desp):
     data = (('chat_id', TG_USER_ID), ('text', '🐢甲骨文ARM抢注脚本为您播报🐢 \n\n' + desp))
