@@ -310,7 +310,7 @@ class InsCreate:
                 display_name=self.tf.display_name,
                 compartment_id=self.tf.compoartment_id,
                 shape=self.shape,
-                extended_metadata={'user_data': self._slcmd},
+#                extended_metadata={'user_data': self._slcmd},
                 shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
                     ocpus=self.tf.ocpus, memory_in_gbs=self.tf.memory_in_gbs),
                 availability_domain=self.tf.availability_domain,
