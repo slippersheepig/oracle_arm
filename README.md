@@ -34,7 +34,6 @@ services:
     volumes:
       - ./data:/opt/oci
       - ./main.tf:/oci/main.tf
-    restart: always
 ```
 ### 四、附上文件位置图
 ![1b224fae4533f397be7b93fd67725f2c](https://github.com/slippersheepig/oracle_arm/assets/58287293/15bb7a67-92ed-41f7-9136-826175c477ca)
