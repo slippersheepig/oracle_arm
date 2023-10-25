@@ -1,4 +1,3 @@
-# oracle_arm
 ### 仅支持密钥登录，需要密码生成的请自行修改`oracle_arm.py`
 ## 步骤
 ### 一、新建`data`文件夹，编辑`.env`、`config`文件以及私钥`p.pem`并保存到`data`文件夹内
