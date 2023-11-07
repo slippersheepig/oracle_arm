@@ -7,10 +7,9 @@ import sys
 import requests
 import random
 import base64
-from pathlib import Path
 from dotenv import dotenv_values
 
-config = dotenv_values(f"/opt/oci/.env")
+config = dotenv_values("/opt/oci/.env")
 
 # tg pusher config
 USE_TG = config["USE_TG"]  # 如果启用tg推送 要设置为True
