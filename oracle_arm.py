@@ -10,7 +10,6 @@ import base64
 from pathlib import Path
 from dotenv import dotenv_values
 
-parent_dir = Path(__file__).resolve().parent
 config = dotenv_values(f"/opt/oci/.env")
 
 # tg pusher config
