@@ -28,7 +28,7 @@ region=us-ashburn-1
 ```bash
 services:
   oci:
-    image: sheepgreen/oracle-arm
+    image: sheepgreen/oracle-arm #或使用github镜像ghcr.io/slippersheepig/oracle-arm
     container_name: oci
     volumes:
       - ./data:/opt/oci
