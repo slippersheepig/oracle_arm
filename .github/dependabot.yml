@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - schedule:
+      interval: daily
+      time: "10:00"
+    directory: "/"
+    commit-message:
+      prefix: 'build(deps):'
+    package-ecosystem: "pip"
