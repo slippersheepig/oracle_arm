@@ -15,9 +15,13 @@ jobs:
 
       - name: Install gh
         run: |
-          wget https://github.com/cli/cli/releases/latest/download/gh_2.1.0_linux_amd64.tar.gz
-          tar -xvf gh_2.1.0_linux_amd64.tar.gz
-          sudo mv gh_2.1.0_linux_amd64/bin/gh /usr/local/bin
+          latest_version=$(curl -s https://api.github.com/repos/cli/cli/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          download_url="https://github.com/cli/cli/releases/download/$latest_version/gh_${latest_version}_linux_amd64.tar.gz"
+          wget $download_url
+          tar -xvf gh_${latest_version}_linux_amd64.tar.gz
+          sudo mv gh_${latest_version}_linux_amd64/bin/gh /usr/local/bin
+          rm gh_${latest_version}_linux_amd64.tar.gz
+          rm -rf gh_${latest_version}_linux_amd64
 
       - name: Configure Git
         run: |
