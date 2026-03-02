@@ -11,18 +11,30 @@ from dotenv import dotenv_values
 
 config = dotenv_values("/opt/oci/.env")
 
+
+def _to_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
 # tg pusher config
-USE_TG = config["USE_TG"]  # 如果启用tg推送 要设置为True
-TG_BOT_TOKEN = config["TG_BOT_TOKEN"]  # 通过 @BotFather 申请获得，示例：1077xxx4424:AAFjv0FcqxxxxxxgEMGfi22B4yh15R5uw
-TG_USER_ID = config["TG_USER_ID"]  # 用户、群组或频道 ID，示例：129xxx206
-TG_API_HOST = config["TG_API_HOST"]  # 自建 API 反代地址，供网络环境无法访问时使用
+USE_TG = _to_bool(config.get("USE_TG"), default=False)  # 如果启用tg推送 要设置为True
+TG_BOT_TOKEN = config.get("TG_BOT_TOKEN", "")  # 通过 @BotFather 申请获得，示例：1077xxx4424:AAFjv0FcqxxxxxxgEMGfi22B4yh15R5uw
+TG_USER_ID = config.get("TG_USER_ID", "")  # 用户、群组或频道 ID，示例：129xxx206
+TG_API_HOST = config.get("TG_API_HOST", "api.telegram.org")  # 自建 API 反代地址，供网络环境无法访问时使用
 
 
 def telegram(desp):
+    if not USE_TG:
+        return
+    if not (TG_BOT_TOKEN and TG_USER_ID and TG_API_HOST):
+        print('Telegram Bot 配置缺失，跳过推送')
+        return
     data = (('chat_id', TG_USER_ID), ('text', '🐢甲骨文ARM抢注脚本为您播报🐢 \n\n' + desp))
     response = requests.post('https://' + TG_API_HOST + '/bot' + TG_BOT_TOKEN +
                              '/sendMessage',
-                             data=data)
+                             data=data,
+                             timeout=10)
     if response.status_code != 200:
         print('Telegram Bot 推送失败')
     else:
@@ -126,7 +138,7 @@ class FileParser:
 
     @property
     def ssh_authorized_keys(self):
-        self._sshkey
+        return self._sshkey
 
     @ssh_authorized_keys.setter
     def ssh_authorized_keys(self, key):
