@@ -1,3 +1,3 @@
-oci==2.168.2
+oci==2.168.3
 requests==2.32.5
 python-dotenv==1.2.2
