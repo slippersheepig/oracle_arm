@@ -1,4 +1,4 @@
-FROM python:slim
+FROM python:3.14
 WORKDIR /oci
 COPY . .
 RUN pip install --use-pep517 --no-cache-dir -r requirements.txt
