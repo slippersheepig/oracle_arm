@@ -1,4 +1,6 @@
 import argparse
+import builtins
+import functools
 import os
 import random
 import re
@@ -11,6 +13,11 @@ import requests
 from dotenv import dotenv_values
 from oci.config import validate_config
 from oci.core import ComputeClient, VirtualNetworkClient
+
+# Docker captures stdout/stderr, but Python may buffer output when it is not attached
+# to a TTY. Keep every existing print visible in `docker logs` immediately without
+# sending high-frequency retry logs to Telegram.
+print = functools.partial(builtins.print, flush=True)
 
 DEFAULT_CONFIG_DIR = os.getenv("OCI_ARM_CONFIG_DIR", "/opt/oci")
 DEFAULT_DOTENV_PATH = os.getenv("OCI_ARM_DOTENV", str(Path(DEFAULT_CONFIG_DIR) / ".env"))
