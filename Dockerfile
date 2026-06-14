@@ -1,4 +1,4 @@
-FROM python:3.14
+FROM python
 WORKDIR /oci
 COPY . .
 RUN apt-get update \
