@@ -1,4 +1,5 @@
 FROM python
+ENV PYTHONUNBUFFERED=1
 WORKDIR /oci
 COPY . .
 RUN apt-get update \
