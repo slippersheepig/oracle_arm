@@ -74,7 +74,6 @@ services:
 docker-compose up -d
 ```
 
-
 ## 查看运行日志
 
 脚本会把运行状态输出到标准输出，Docker 会收集这些日志。可使用以下命令查看：
