@@ -7,3 +7,8 @@ updates:
     commit-message:
       prefix: 'build(deps):'
     package-ecosystem: "pip"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
