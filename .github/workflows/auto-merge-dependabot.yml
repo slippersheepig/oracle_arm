@@ -32,7 +32,7 @@ jobs:
 
       - name: Merge PR
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           # 获取 PR 号码
           PR_NUMBER=$(jq -r .pull_request.number < "$GITHUB_EVENT_PATH")
