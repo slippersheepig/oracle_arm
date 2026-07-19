@@ -6,6 +6,8 @@ on:
     workflows: ["Auto Merge Dependabot PRs"]
     types:
       - completed
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   build:
