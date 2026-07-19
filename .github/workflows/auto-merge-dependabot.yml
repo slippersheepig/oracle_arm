@@ -37,4 +37,4 @@ jobs:
           # 获取 PR 号码
           PR_NUMBER=$(jq -r .pull_request.number < "$GITHUB_EVENT_PATH")
           # 合并 PR
-          gh pr merge $PR_NUMBER --auto --merge --delete-branch
+          gh pr merge $PR_NUMBER --merge --delete-branch
