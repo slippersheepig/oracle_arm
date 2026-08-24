@@ -50,9 +50,10 @@ region=us-ashburn-1
 - `display_name`
 - `source_id`
 - `boot_volume_size_in_gbs`（可选，缺省为 `50`）
+- `assign_public_ip`（可选，缺省为 `true`，用于显式控制主 VNIC 是否分配公网 IP）
 - `ssh_authorized_keys`
 
-新版解析器兼容 `ocpus = 4` 和 `ocpus = "4"` 两种 Terraform 写法。
+新版解析器兼容 `ocpus = 4` 和 `ocpus = "4"` 两种 Terraform 写法，并会为 VNIC 自动生成符合 OCI DNS 规则的 `hostname_label`。
 
 ### 三、新建 `docker-compose.yml`
 
