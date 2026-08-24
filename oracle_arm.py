@@ -79,14 +79,24 @@ class OciUser:
 
     def parse(self, cfg) -> None:
         print("parser cfg")
+        self._config = dict(cfg)
         self.user = cfg["user"]
         self.fingerprint = cfg["fingerprint"]
-        self.key_file = cfg["key_file"]
+        self.key_file = cfg.get("key_file")
+        self.key_content = cfg.get("key_content")
+        self.pass_phrase = cfg.get("pass_phrase")
         self.tenancy = cfg["tenancy"]
         self.region = cfg["region"]
 
+    @property
+    def config(self):
+        return dict(self._config)
+
     def keys(self):
-        return ("user", "fingerprint", "key_file", "tenancy", "region")
+        # Preserve optional SDK-supported authentication fields such as
+        # pass_phrase/key_content when callers still treat this object like a
+        # mapping.  Dropping them makes encrypted PEM keys unusable.
+        return tuple(key for key in self._config if self._config.get(key) is not None)
 
     def __getitem__(self, item):
         return getattr(self, item)
@@ -116,8 +126,10 @@ class FileParser:
         self.availability_domain = self._required(values, "availability_domain")
         self.subnet_id = self._required(values, "subnet_id")
         self.display_name = self._required(values, "display_name").strip().replace(" ", "-")
+        self.hostname_label = self._hostname_label(self.display_name)
         self.image_id = self._required(values, "source_id")
         self.boot_volume_size_in_gbs = self._optional_float(values, "boot_volume_size_in_gbs", 50.0)
+        self.assign_public_ip = self._optional_bool(values, "assign_public_ip", True)
         self.ssh_authorized_keys = self._required(values, "ssh_authorized_keys")
 
     @classmethod
@@ -151,6 +163,36 @@ class FileParser:
         if key not in values:
             return default
         return cls._required_float(values, key)
+
+    @classmethod
+    def _optional_bool(cls, values, key, default):
+        if key not in values:
+            return default
+        return _to_bool(cls._required(values, key), default=default)
+
+    @staticmethod
+    def _hostname_label(display_name):
+        # OCI VNIC hostname labels must be DNS-compatible: letters, numbers,
+        # hyphens, not starting/ending with a hyphen, and at most 63 chars.
+        label = re.sub(r"[^A-Za-z0-9-]+", "-", display_name).strip("-").lower()
+        label = re.sub(r"-+", "-", label)[:63].strip("-")
+        return label or "oracle-arm"
+
+    @property
+    def hostname_label(self):
+        return self._hostname_label_value
+
+    @hostname_label.setter
+    def hostname_label(self, label):
+        self._hostname_label_value = label
+
+    @property
+    def assign_public_ip(self):
+        return self._assign_public_ip
+
+    @assign_public_ip.setter
+    def assign_public_ip(self, value):
+        self._assign_public_ip = value
 
     @property
     def ssh_authorized_keys(self):
@@ -230,7 +272,7 @@ class InsCreate:
 
     def __init__(self, user: OciUser, filepath) -> None:
         self._user = user
-        self._client = ComputeClient(config=dict(user))
+        self._client = ComputeClient(config=user.config)
         self.tf = FileParser(filepath)
         self.sleep_time = random.uniform(3, 6)
         self.try_count = 0
@@ -305,7 +347,7 @@ class InsCreate:
         return exc.status in {400, 500} and "out of host capacity" in message
 
     def check_public_ip(self):
-        network_client = VirtualNetworkClient(config=dict(self._user))
+        network_client = VirtualNetworkClient(config=self._user.config)
         count = 100
         while count:
             attachments = self._client.list_vnic_attachments(
@@ -334,7 +376,9 @@ class InsCreate:
                 ),
                 availability_domain=self.tf.availability_domain,
                 create_vnic_details=oci.core.models.CreateVnicDetails(
-                    subnet_id=self.tf.subnet_id, hostname_label=self.tf.display_name
+                    subnet_id=self.tf.subnet_id,
+                    hostname_label=self.tf.hostname_label,
+                    assign_public_ip=self.tf.assign_public_ip,
                 ),
                 source_details=oci.core.models.InstanceSourceViaImageDetails(
                     image_id=self.tf.image_id,
