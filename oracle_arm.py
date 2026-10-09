@@ -14,9 +14,8 @@ from dotenv import dotenv_values
 from oci.config import validate_config
 from oci.core import ComputeClient, VirtualNetworkClient
 
-# Docker captures stdout/stderr, but Python may buffer output when it is not attached
-# to a TTY. Keep every existing print visible in `docker logs` immediately without
-# sending high-frequency retry logs to Telegram.
+# Docker 收集 stdout/stderr，但未连接 TTY 时 Python 可能缓冲输出。
+# 立即刷新输出以确保 `docker logs` 实时可见，同时避免将高频重试日志频繁发送至 Telegram。
 print = functools.partial(builtins.print, flush=True)
 
 DEFAULT_CONFIG_DIR = os.getenv("OCI_ARM_CONFIG_DIR", "/opt/oci")
@@ -25,46 +24,53 @@ DEFAULT_OCI_CONFIG_PATH = os.getenv("OCI_ARM_OCI_CONFIG", str(Path(DEFAULT_CONFI
 DEFAULT_OCI_PROFILE = os.getenv("OCI_ARM_OCI_PROFILE", "DEFAULT")
 DEFAULT_TF_PATH = os.getenv("OCI_ARM_TF_PATH", "main.tf")
 
-config = dotenv_values(DEFAULT_DOTENV_PATH)
+_env_config = dotenv_values(DEFAULT_DOTENV_PATH)
 
 
-def _to_bool(value, default=False):
+def _to_bool(value, default=False) -> bool:
     if value is None:
         return default
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-# tg pusher config
-USE_TG = _to_bool(config.get("USE_TG"), default=False)  # 如果启用tg推送 要设置为True
-TG_BOT_TOKEN = config.get("TG_BOT_TOKEN", "")  # 通过 @BotFather 申请获得，示例：1077xxx4424:AAFjv0FcqxxxxxxgEMGfi22B4yh15R5uw
-TG_USER_ID = config.get("TG_USER_ID", "")  # 用户、群组或频道 ID，示例：129xxx206
-TG_API_HOST = config.get("TG_API_HOST", "api.telegram.org")  # 自建 API 反代地址，供网络环境无法访问时使用
+def _get_conf(key: str, default: str = "") -> str:
+    """优先从 .env 读取配置，若不存在或为空则回退至系统环境变量。"""
+    val = _env_config.get(key)
+    if val is not None and str(val).strip() != "":
+        return str(val).strip()
+    return os.getenv(key, default)
 
 
-def telegram(desp):
+# Telegram 推送配置
+USE_TG = _to_bool(_get_conf("USE_TG", "False"), default=False)
+TG_BOT_TOKEN = _get_conf("TG_BOT_TOKEN", "")
+TG_USER_ID = _get_conf("TG_USER_ID", "")
+TG_API_HOST = _get_conf("TG_API_HOST", "api.telegram.org")
+
+
+def telegram(desp: str) -> None:
     if not USE_TG:
         return
     if not (TG_BOT_TOKEN and TG_USER_ID and TG_API_HOST):
         print("Telegram Bot 配置缺失，跳过推送")
         return
-    data = (("chat_id", TG_USER_ID), ("text", "🐢甲骨文ARM抢注脚本为您播报🐢 \n\n" + desp))
+
+    url = f"https://{TG_API_HOST}/bot{TG_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TG_USER_ID,
+        "text": f"🐢 甲骨文 ARM 抢注助手 🐢\n\n{desp}",
+    }
     try:
-        response = requests.post(
-            "https://" + TG_API_HOST + "/bot" + TG_BOT_TOKEN + "/sendMessage",
-            data=data,
-            timeout=10,
-        )
+        response = requests.post(url, data=payload, timeout=10)
         response.raise_for_status()
-    except requests.RequestException as exc:
+    except Exception as exc:
         print(f"Telegram Bot 推送失败: {exc}")
     else:
         print("Telegram Bot 推送成功")
 
 
 class OciUser:
-    """
-    oci 用户配置文件的类
-    """
+    """OCI 用户配置与凭据解析类"""
 
     user: str
     fingerprint: str
@@ -78,7 +84,7 @@ class OciUser:
         self.parse(cfg)
 
     def parse(self, cfg) -> None:
-        print("parser cfg")
+        print("正在解析 OCI 配置文件...")
         self._config = dict(cfg)
         self.user = cfg["user"]
         self.fingerprint = cfg["fingerprint"]
@@ -87,40 +93,47 @@ class OciUser:
         self.pass_phrase = cfg.get("pass_phrase")
         self.tenancy = cfg["tenancy"]
         self.region = cfg["region"]
+        print(f"OCI 配置解析成功 (区域: {self.region})")
 
     @property
-    def config(self):
+    def config(self) -> dict:
         return dict(self._config)
 
     def keys(self):
-        # Preserve optional SDK-supported authentication fields such as
-        # pass_phrase/key_content when callers still treat this object like a
-        # mapping.  Dropping them makes encrypted PEM keys unusable.
+        # 保留 pass_phrase/key_content 等可选字段，确保加密 PEM 密钥等认证方式正常
         return tuple(key for key in self._config if self._config.get(key) is not None)
 
     def __getitem__(self, item):
+        if item in self._config:
+            return self._config[item]
         return getattr(self, item)
 
-    def compartment_id(self):
+    def compartment_id(self) -> str:
         return self.tenancy
 
 
 class FileParser:
-    ASSIGNMENT_RE = re.compile(r'^\s*([A-Za-z0-9_".-]+)\s*=\s*(.+?)\s*(?:#.*)?$', re.MULTILINE)
+    """Terraform 配置文件 (main.tf) 解析类"""
+
+    # 正确匹配引号字符串与裸值，同时安全兼容 '#' 与 '//' 两种单行注释风格
+    ASSIGNMENT_RE = re.compile(
+        r'^\s*([A-Za-z0-9_".-]+)\s*=\s*(?:"([^"]*)"|([^#/\r\n]+?))\s*(?:(?:#|//).*?)?$',
+        re.MULTILINE,
+    )
 
     def __init__(self, file_path: str) -> None:
-        self.parser(file_path)
+        self.parse(file_path)
 
-    def parser(self, file_path):
+    def parse(self, file_path: str) -> None:
         try:
-            print("filepath", file_path)
+            print(f"正在读取 Terraform 配置文件: {file_path}")
             with open(file_path, "r", encoding="utf-8") as file_obj:
-                self._filebuf = file_obj.read()
+                content = file_obj.read()
         except OSError as exc:
-            raise SystemExit(f"main.tf文件打开失败,请再一次确认执行了正确操作,脚本退出: {exc}") from exc
+            raise SystemExit(f"main.tf 文件打开失败，请确认文件路径及读取权限: {exc}") from exc
 
-        values = self._parse_assignments(self._filebuf)
-        self.compoartment_id = self._required(values, "compartment_id")
+        values = self._parse_assignments(content)
+        self.compartment_id = self._required(values, "compartment_id")
         self.memory_in_gbs = self._required_float(values, "memory_in_gbs")
         self.ocpus = self._required_float(values, "ocpus")
         self.availability_domain = self._required(values, "availability_domain")
@@ -132,145 +145,70 @@ class FileParser:
         self.assign_public_ip = self._optional_bool(values, "assign_public_ip", True)
         self.ssh_authorized_keys = self._required(values, "ssh_authorized_keys")
 
+    def parser(self, file_path: str) -> None:
+        """兼容旧方法名 parser"""
+        self.parse(file_path)
+
     @classmethod
-    def _parse_assignments(cls, content):
+    def _parse_assignments(cls, content: str) -> dict:
         values = {}
-        for key, raw_value in cls.ASSIGNMENT_RE.findall(content):
+        for key, q_val, raw_val in cls.ASSIGNMENT_RE.findall(content):
             clean_key = key.strip('"')
-            clean_value = raw_value.strip().rstrip(",").strip()
-            if clean_value.startswith('"') and clean_value.endswith('"'):
-                clean_value = clean_value[1:-1]
+            clean_value = q_val if q_val != "" else raw_val
+            clean_value = clean_value.strip().rstrip(",").strip()
             values.setdefault(clean_key, []).append(clean_value)
         return values
 
     @staticmethod
-    def _required(values, key):
+    def _required(values: dict, key: str) -> str:
         try:
             return values[key][-1]
         except (KeyError, IndexError) as exc:
-            raise ValueError(f"main.tf缺少必要参数: {key}") from exc
+            raise ValueError(f"main.tf 缺少必要参数: {key}") from exc
 
     @classmethod
-    def _required_float(cls, values, key):
+    def _required_float(cls, values: dict, key: str) -> float:
         raw_value = cls._required(values, key)
         try:
             return float(raw_value)
         except ValueError as exc:
-            raise ValueError(f"main.tf参数 {key} 必须是数字，当前值: {raw_value}") from exc
+            raise ValueError(f"main.tf 参数 {key} 必须是数字，当前值: {raw_value}") from exc
 
     @classmethod
-    def _optional_float(cls, values, key, default):
+    def _optional_float(cls, values: dict, key: str, default: float) -> float:
         if key not in values:
             return default
         return cls._required_float(values, key)
 
     @classmethod
-    def _optional_bool(cls, values, key, default):
+    def _optional_bool(cls, values: dict, key: str, default: bool) -> bool:
         if key not in values:
             return default
         return _to_bool(cls._required(values, key), default=default)
 
     @staticmethod
-    def _hostname_label(display_name):
-        # OCI VNIC hostname labels must be DNS-compatible: letters, numbers,
-        # hyphens, not starting/ending with a hyphen, and at most 63 chars.
+    def _hostname_label(display_name: str) -> str:
+        # OCI VNIC hostname labels 必须符合 DNS 规范：字母、数字、连字符，长度不超过 63
         label = re.sub(r"[^A-Za-z0-9-]+", "-", display_name).strip("-").lower()
         label = re.sub(r"-+", "-", label)[:63].strip("-")
         return label or "oracle-arm"
 
+    # 兼容历史拼写错误属性 compoartment_id，确保旧代码及外部调用 100% 兼容
     @property
-    def hostname_label(self):
-        return self._hostname_label_value
-
-    @hostname_label.setter
-    def hostname_label(self, label):
-        self._hostname_label_value = label
-
-    @property
-    def assign_public_ip(self):
-        return self._assign_public_ip
-
-    @assign_public_ip.setter
-    def assign_public_ip(self, value):
-        self._assign_public_ip = value
-
-    @property
-    def ssh_authorized_keys(self):
-        return self._sshkey
-
-    @ssh_authorized_keys.setter
-    def ssh_authorized_keys(self, key):
-        self._sshkey = key
-
-    @property
-    def boot_volume_size_in_gbs(self):
-        return self._volsize
-
-    @boot_volume_size_in_gbs.setter
-    def boot_volume_size_in_gbs(self, size):
-        self._volsize = size
-
-    @property
-    def image_id(self):
-        return self._imgid
-
-    @image_id.setter
-    def image_id(self, imageid):
-        self._imgid = imageid
-
-    @property
-    def display_name(self):
-        return self._dname
-
-    @display_name.setter
-    def display_name(self, name):
-        self._dname = name
-
-    @property
-    def subnet_id(self):
-        return self._subid
-
-    @subnet_id.setter
-    def subnet_id(self, sid):
-        self._subid = sid
-
-    @property
-    def compoartment_id(self):
-        return self._comid
+    def compoartment_id(self) -> str:
+        return self.compartment_id
 
     @compoartment_id.setter
-    def compoartment_id(self, cid):
-        self._comid = cid
-
-    @property
-    def memory_in_gbs(self):
-        return self._mm
-
-    @memory_in_gbs.setter
-    def memory_in_gbs(self, mm):
-        self._mm = mm
-
-    @property
-    def ocpus(self):
-        return self._cpu
-
-    @ocpus.setter
-    def ocpus(self, cpu_count):
-        self._cpu = cpu_count
-
-    @property
-    def availability_domain(self):
-        return self._adomain
-
-    @availability_domain.setter
-    def availability_domain(self, domain):
-        self._adomain = domain
+    def compoartment_id(self, cid: str) -> None:
+        self.compartment_id = cid
 
 
 class InsCreate:
+    """OCI ARM 实例创建与循环抢注类"""
+
     shape = "VM.Standard.A1.Flex"
 
-    def __init__(self, user: OciUser, filepath) -> None:
+    def __init__(self, user: OciUser, filepath: str) -> None:
         self._user = user
         self._client = ComputeClient(config=user.config)
         self.tf = FileParser(filepath)
@@ -280,96 +218,153 @@ class InsCreate:
         self.ins_id = None
         self.public_ip = None
 
-    def create(self):
-        text = "脚本开始启动:\n,区域:{}-实例:{},CPU:{}C-内存:{}G-硬盘:{}G的小🐔已经快马加鞭抢购了\n".format(
-            self.tf.availability_domain,
-            self.tf.display_name,
-            self.tf.ocpus,
-            self.tf.memory_in_gbs,
-            self.tf.boot_volume_size_in_gbs,
+    def create(self) -> None:
+        start_text = (
+            "🚀 甲骨文 ARM 抢注任务启动 🚀\n"
+            "--------------------------------\n"
+            f"📍 可用区域: {self.tf.availability_domain}\n"
+            f"🖥️ 实例名称: {self.tf.display_name}\n"
+            f"⚙️ 规格配置: {self.tf.ocpus} OCPU / {self.tf.memory_in_gbs} GB 内存 / {self.tf.boot_volume_size_in_gbs} GB 引导卷\n"
+            f"🌐 分配公网: {'是' if self.tf.assign_public_ip else '否'}\n"
+            "--------------------------------\n"
+            "🤖 脚本已就绪，正在快马加鞭抢注中..."
         )
-        telegram(text)
+        print(start_text)
+        telegram(start_text)
+
         while True:
             try:
                 ins = self.launch_instance()
             except oci.exceptions.ServiceError as exc:
                 self.handle_service_error(exc)
                 time.sleep(self.sleep_time)
-            except oci.exceptions.RequestException as exc:
-                re_text = "❌发生错误:{}".format(exc)
-                print(re_text)
-                telegram(re_text)
+            except (oci.exceptions.RequestException, requests.RequestException, ConnectionError, TimeoutError, OSError) as exc:
+                # 捕获网络连接抖动或瞬时断开，避免长周期容器挂机崩溃，同时避免网络抖动时狂轰 Telegram
+                print(f"⚠️ 网络连接波动或请求超时 (将自动重试): {exc}")
                 time.sleep(self.sleep_time)
             else:
-                self.logp(
-                    "🎉经过 {} 尝试后\n 区域:{}实例:{}-CPU:{}C-内存:{}G🐔创建成功了🎉\n".format(
-                        self.try_count + 1,
-                        self.tf.availability_domain,
-                        self.tf.display_name,
-                        self.tf.ocpus,
-                        self.tf.memory_in_gbs,
-                    )
+                success_text = (
+                    "🎉 甲骨文 ARM 实例抢注成功！ 🎉\n"
+                    "--------------------------------\n"
+                    f"🔢 尝试次数: 第 {self.try_count + 1} 次尝试\n"
+                    f"📍 可用区域: {self.tf.availability_domain}\n"
+                    f"🖥️ 实例名称: {self.tf.display_name}\n"
+                    f"⚙️ 规格配置: {self.tf.ocpus} OCPU / {self.tf.memory_in_gbs} GB 内存 / {self.tf.boot_volume_size_in_gbs} GB 引导卷\n"
                 )
+                self.logp(success_text)
                 self.ins_id = ins.id
                 self.check_public_ip()
                 telegram(self.desp)
                 break
             finally:
                 self.try_count += 1
-                count_text = "抢注中，已经经过:{}尝试".format(self.try_count)
+                count_text = f"⏳ 抢注中，当前已尝试: {self.try_count} 次 (当前重试间隔: {self.sleep_time:.1f}s)"
                 print(count_text)
                 if self.try_count % 100 == 0:
-                    telegram(count_text)
+                    tg_progress = (
+                        "⏳ 抢注进度播报\n"
+                        "--------------------------------\n"
+                        f"🔢 已尝试次数: {self.try_count} 次\n"
+                        f"⏱️ 当前请求间隔: {self.sleep_time:.1f} 秒\n"
+                        f"🖥️ 目标实例: {self.tf.display_name} ({self.tf.ocpus}C / {self.tf.memory_in_gbs}G)"
+                    )
+                    telegram(tg_progress)
 
-    def handle_service_error(self, exc):
-        if exc.status == 429 and exc.code == "TooManyRequests":
-            print("请求太快了，自动调整请求时间ing")
+    def handle_service_error(self, exc: oci.exceptions.ServiceError) -> None:
+        # 1. 触发速率限制：自动增加休眠时间退避
+        if exc.status == 429 or exc.code == "TooManyRequests":
+            print("⚠️ 触发速率限制 (429 TooManyRequests)，正在自动延长重试间隔...")
             if self.sleep_time < 60:
                 self.sleep_time += random.uniform(3, 6)
+        # 2. 容量不足（最常见的无机状态）：平滑恢复至较快的常态刷机频率
         elif self.is_capacity_error(exc):
-            print("目前没有请求限速,快马加刷中")
-            if self.sleep_time > 15:
-                self.sleep_time -= random.uniform(3, 6)
-        elif exc.status == 400 and "Service limit" in str(exc.message):
-            self.logp(
-                "❌如果看到这条推送,说明刷到机器，但是开通失败了，请后台检查你的cpu，内存，硬盘占用情况，并释放对应的资源 返回值:{},\n 脚本停止".format(exc)
+            print("⏳ 暂无主机容量 (Out of host capacity)，继续快马加鞭抢注中...")
+            if self.sleep_time > 6:
+                self.sleep_time = max(3.0, self.sleep_time - random.uniform(2, 4))
+        # 3. 认证失败：密钥或配置错误属于致命错误，必须立即提醒并停止
+        elif exc.status == 401 or exc.code in {"NotAuthenticated", "InvalidSignature"}:
+            error_msg = (
+                "❌ OCI 认证失败 (HTTP 401)！\n"
+                "请检查 config 中的 user/fingerprint/key_file/tenancy 是否配置正确。\n"
+                f"错误详情: {exc.message}"
             )
-            telegram(self.desp)
+            self.logp(error_msg)
+            telegram(error_msg)
             raise exc
+        # 4. 服务配额超限：说明实例已达到账号配额上限，无法继续开机，应停止
+        elif exc.status == 400 and ("service limit" in str(exc.message).lower() or "limitexceeded" in str(exc.code).lower()):
+            error_msg = (
+                "❌ 达到服务配额上限 (Service Limit Exceeded)！\n"
+                "说明已刷到机器或资源配额不足，请登录 OCI 后台检查 CPU、内存、引导卷占用并释放资源。\n"
+                f"错误详情: {exc}"
+            )
+            self.logp(error_msg)
+            telegram(error_msg)
+            raise exc
+        # 5. 服务端临时波动 (502/503/504 等网关错误)：仅终端输出并重试，不轰炸 Telegram
+        elif exc.status in {502, 503, 504}:
+            print(f"⚠️ OCI 服务端临时网络/网关波动 (HTTP {exc.status})，稍后将自动重试...")
+        # 6. 其他未知服务异常：终端记录详情并继续重试
         else:
-            print("❌发生错误:{}".format(exc))
-            telegram("❌发生错误:{}".format(exc))
-        print("本次返回信息:", exc)
+            print(f"⚠️ 收到 OCI 服务异常返回: {exc.status} - {exc.code} - {exc.message}")
 
     @staticmethod
-    def is_capacity_error(exc):
+    def is_capacity_error(exc) -> bool:
         message = str(getattr(exc, "message", "")).lower()
-        return exc.status in {400, 500} and "out of host capacity" in message
+        code = str(getattr(exc, "code", "")).lower()
+        return (
+            exc.status in {400, 500}
+            and ("out of host capacity" in message or "outofhostcapacity" in code or "out of capacity" in message)
+        )
 
-    def check_public_ip(self):
+    def check_public_ip(self) -> None:
         network_client = VirtualNetworkClient(config=self._user.config)
-        count = 100
-        while count:
-            attachments = self._client.list_vnic_attachments(
-                compartment_id=self._user.compartment_id(), instance_id=self.ins_id
-            )
-            data = attachments.data
-            if data:
-                print("开始查找vnic id ")
-                vnic_id = data[0].vnic_id
-                public_ip = network_client.get_vnic(vnic_id).data.public_ip
-                self.logp("公网ip为:{}\n 🐢脚本停止，感谢使用😄\n".format(public_ip))
-                self.public_ip = public_ip
-                return
+        print("正在查询新实例的 VNIC 网络信息及 IP 地址...")
+        max_attempts = 30  # 最多等待约 150 秒以确保公网 IP 分配就绪
+        for attempt in range(max_attempts):
+            try:
+                attachments = self._client.list_vnic_attachments(
+                    compartment_id=self._user.compartment_id(), instance_id=self.ins_id
+                )
+                data = attachments.data
+                if data:
+                    vnic_id = data[0].vnic_id
+                    vnic = network_client.get_vnic(vnic_id).data
+                    public_ip = vnic.public_ip
+                    private_ip = vnic.private_ip
+
+                    # 若配置分配公网 IP 但公网 IP 尚未就绪，继续轮询等待分配完成
+                    if self.tf.assign_public_ip and not public_ip:
+                        print(f"[{attempt + 1}/{max_attempts}] VNIC 已就绪，公网 IP 正在分配中，等待 5 秒后重试...")
+                        time.sleep(5)
+                        continue
+
+                    ip_info = (
+                        "--------------------------------\n"
+                        f"🌐 公网 IP: {public_ip or '未分配 (assign_public_ip=False 或分配超时)'}\n"
+                        f"🔒 内网 IP: {private_ip or '未知'}\n"
+                        "--------------------------------\n"
+                        "🐢 抢注任务圆满完成，脚本已安全停止，感谢使用！😄\n"
+                    )
+                    self.logp(ip_info)
+                    self.public_ip = public_ip
+                    return
+            except Exception as exc:
+                print(f"[{attempt + 1}/{max_attempts}] 查询 VNIC 信息出现短暂异常: {exc}，将在 5 秒后重试...")
+
             time.sleep(5)
-            count -= 1
-        self.logp("开机失败，被他娘甲骨文给关掉了😠，脚本停止，请重新运行\n")
+
+        warn_text = (
+            "⚠️ 实例已创建，但未能及时获取到 VNIC/公网 IP 地址。\n"
+            "请登录甲骨文云控制台查看实例运行状态与网络分配。\n"
+        )
+        self.logp(warn_text)
 
     def launch_instance(self):
         return self._client.launch_instance(
             oci.core.models.LaunchInstanceDetails(
                 display_name=self.tf.display_name,
-                compartment_id=self.tf.compoartment_id,
+                compartment_id=self.tf.compartment_id,
                 shape=self.shape,
                 shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
                     ocpus=self.tf.ocpus, memory_in_gbs=self.tf.memory_in_gbs
@@ -384,19 +379,19 @@ class InsCreate:
                     image_id=self.tf.image_id,
                     boot_volume_size_in_gbs=self.tf.boot_volume_size_in_gbs,
                 ),
-                metadata=dict(ssh_authorized_keys=self.tf.ssh_authorized_keys),
+                metadata={"ssh_authorized_keys": self.tf.ssh_authorized_keys},
                 is_pv_encryption_in_transit_enabled=True,
             )
         ).data
 
-    # 兼容旧代码/外部调用里已有的拼写错误方法名。
+    # 兼容历史拼写错误方法名 lunch_instance
     def lunch_instance(self):
         return self.launch_instance()
 
-    def logp(self, text):
+    def logp(self, text: str) -> None:
         print(text)
         if USE_TG:
-            self.desp += text
+            self.desp += text + "\n"
 
 
 def parse_args(argv):
