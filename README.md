@@ -1,6 +1,6 @@
 ### Oracle ARM 抢注脚本
 
-该脚本使用 Oracle Cloud Infrastructure Python SDK 创建 `VM.Standard.A1.Flex` 实例。当前代码已按新版 OCI SDK 的调用方式保留 `LaunchInstanceDetails` / `LaunchInstanceShapeConfigDetails` / `CreateVnicDetails` / `InstanceSourceViaImageDetails`，并增强了 `main.tf` 解析、错误处理和运行参数。
+该脚本基于 Oracle Cloud Infrastructure (OCI) Python SDK 2.189.0 开发，用于自动循环抢注 Oracle Cloud Always Free 免费阶梯的 ARM 架构实例（`VM.Standard.A1.Flex`）。支持自动解析 `main.tf` 配置文件、智能退避重试、网络容错与 Telegram 通知推送。
 
 > 仅支持密钥登录，需要密码生成的请自行修改 `oracle_arm.py`。
 
@@ -42,18 +42,20 @@ region=us-ashburn-1
 
 脚本会读取以下字段：
 
-- `compartment_id`
-- `memory_in_gbs`
-- `ocpus`
-- `availability_domain`
-- `subnet_id`
-- `display_name`
-- `source_id`
-- `boot_volume_size_in_gbs`（可选，缺省为 `50`）
+- `compartment_id`：实例所在分区 OCID
+- `memory_in_gbs`：内存大小（GB）
+- `ocpus`：OCPU 核心数
+- `availability_domain`：可用区域
+- `subnet_id`：子网 OCID
+- `display_name`：实例名称
+- `source_id`：镜像 OCID
+- `shape`（可选，缺省为 `VM.Standard.A1.Flex`）
+- `fault_domain`（可选，指定故障域，如 `FAULT-DOMAIN-1`）
+- `boot_volume_size_in_gbs`（可选，缺省为 `50` GB）
 - `assign_public_ip`（可选，缺省为 `true`，用于显式控制主 VNIC 是否分配公网 IP）
-- `ssh_authorized_keys`
+- `ssh_authorized_keys`：SSH 公钥内容
 
-新版解析器兼容 `ocpus = 4` 和 `ocpus = "4"` 两种 Terraform 写法，并会为 VNIC 自动生成符合 OCI DNS 规则的 `hostname_label`。
+解析器支持 `ocpus = 4` 与 `ocpus = "4"` 两种 Terraform 语法写法，并自动生成符合 OCI DNS 规范的 `hostname_label`。若未在当前目录找到 `main.tf`，脚本会自动检测配置目录（默认 `/opt/oci/main.tf`）。
 
 ### 三、新建 `docker-compose.yml`
 
