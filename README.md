@@ -1,6 +1,6 @@
 ### Oracle ARM 抢注脚本
 
-该脚本基于 Oracle Cloud Infrastructure (OCI) Python SDK 2.189.0 开发，用于自动循环抢注 Oracle Cloud Always Free 免费阶梯的 ARM 架构实例（`VM.Standard.A1.Flex`）。支持自动解析 `main.tf` 配置文件、智能退避重试、网络容错与 Telegram 通知推送。
+该脚本基于 Oracle Cloud Infrastructure (OCI) Python SDK 开发，用于自动循环抢注 Oracle Cloud Always Free 免费阶梯的 ARM 架构实例（`VM.Standard.A1.Flex`）。支持自动解析 `main.tf` 配置文件、智能退避重试、网络容错与 Telegram 通知推送。
 
 > 仅支持密钥登录，需要密码生成的请自行修改 `oracle_arm.py`。
 
