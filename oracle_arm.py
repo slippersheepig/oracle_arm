@@ -236,7 +236,13 @@ class InsCreate:
     def __init__(self, user: OciUser, file_path: str) -> None:
         self._user = user
         # 设置请求超时时间 (连接超时 10s，读取超时 30s)，避免网络挂起
-        self._client = ComputeClient(config=user.config, timeout=(10, 30))
+        # 显式关闭 SDK 内置重试与断路器，避免全局环境变量干扰脚本自有的退避抢注循环
+        self._client = ComputeClient(
+            config=user.config,
+            timeout=(10, 30),
+            retry_strategy=oci.retry.NoneRetryStrategy(),
+            circuit_breaker_strategy=oci.circuit_breaker.NoCircuitBreakerStrategy(),
+        )
         self.tf = FileParser(file_path)
         self.shape = self.tf.shape
         self.sleep_time = random.uniform(3, 6)
@@ -269,7 +275,14 @@ class InsCreate:
                 ins = self.launch_instance()
             except oci.exceptions.ServiceError as exc:
                 self.handle_service_error(exc)
-            except (oci.exceptions.RequestException, requests.RequestException, ConnectionError, TimeoutError, OSError) as exc:
+            except (
+                oci.exceptions.RequestException,
+                oci.exceptions.ConnectTimeout,
+                requests.RequestException,
+                ConnectionError,
+                TimeoutError,
+                OSError,
+            ) as exc:
                 print(f"⚠️ 网络连接波动或请求超时 (将自动重试): {exc}")
             else:
                 success_text = (
@@ -336,7 +349,7 @@ class InsCreate:
             error_msg = (
                 "❌ 达到服务配额上限 (Service Limit Exceeded)！\n"
                 "说明已刷到机器或资源配额不足，请登录 OCI 后台检查 CPU、内存、引导卷占用并释放资源。\n"
-                f"错误详情: {exc}"
+                f"错误详情: {exc.message or exc}"
             )
             self.logp(error_msg)
             telegram(error_msg)
@@ -368,7 +381,12 @@ class InsCreate:
         )
 
     def check_public_ip(self) -> None:
-        network_client = VirtualNetworkClient(config=self._user.config, timeout=(10, 30))
+        network_client = VirtualNetworkClient(
+            config=self._user.config,
+            timeout=(10, 30),
+            retry_strategy=oci.retry.NoneRetryStrategy(),
+            circuit_breaker_strategy=oci.circuit_breaker.NoCircuitBreakerStrategy(),
+        )
         print("正在查询新实例的 VNIC 网络信息及 IP 地址...")
         target_compartment = self.tf.compartment_id or self._user.compartment_id()
         max_attempts = 30  # 最多等待约 150 秒以确保公网 IP 分配就绪
