@@ -10,31 +10,10 @@ jobs:
   merge:
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Install gh
-        run: |
-          latest_version=$(curl -s https://api.github.com/repos/cli/cli/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
-          download_url="https://github.com/cli/cli/releases/download/v${latest_version}/gh_${latest_version}_linux_amd64.tar.gz"
-          wget $download_url
-          tar -xvf gh_${latest_version}_linux_amd64.tar.gz
-          sudo mv gh_${latest_version}_linux_amd64/bin/gh /usr/local/bin
-          rm gh_${latest_version}_linux_amd64.tar.gz
-          rm -rf gh_${latest_version}_linux_amd64
-
-      - name: Configure Git
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-
       - name: Merge PR
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          # 获取 PR 号码
           PR_NUMBER=$(jq -r .pull_request.number < "$GITHUB_EVENT_PATH")
-          # 合并 PR
-          gh pr merge $PR_NUMBER --auto --merge --delete-branch
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --merge --delete-branch
