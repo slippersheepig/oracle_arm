@@ -1,4 +1,4 @@
-### Oracle ARM 抢注脚本
+# Oracle ARM 抢注脚本
 
 该脚本基于 Oracle Cloud Infrastructure (OCI) Python SDK 开发，用于自动循环抢注 Oracle Cloud Always Free 免费阶梯的 ARM 架构实例（`VM.Standard.A1.Flex`）。支持自动解析 `main.tf` 配置文件、智能退避重试、网络容错与 Telegram 通知推送。
 
@@ -10,7 +10,7 @@
 
 #### `.env` 文件按以下格式保存内容
 
-```bash
+```ini
 USE_TG=True
 TG_BOT_TOKEN=123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ
 TG_USER_ID=987654321
@@ -24,7 +24,7 @@ TG_API_HOST=api.telegram.org
 
 #### `config` 文件按以下格式保存内容
 
-```bash
+```ini
 [DEFAULT]
 user=ocid1.user.oc1..aaaaaaxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 fingerprint=xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx
@@ -74,8 +74,10 @@ services:
 ### 四、启动
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
+
+> 若使用旧版独立安装的 Compose，也可执行 `docker-compose up -d`。
 
 ## 查看运行日志
 
