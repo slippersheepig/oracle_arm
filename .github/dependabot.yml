@@ -1,12 +1,12 @@
 version: 2
 updates:
-  - schedule:
-      interval: daily
-      time: "10:00"
+  - package-ecosystem: "pip"
     directory: "/"
+    schedule:
+      interval: "daily"
+      time: "10:00"
     commit-message:
-      prefix: 'build(deps):'
-    package-ecosystem: "pip"
+      prefix: "build(deps):"
 
   - package-ecosystem: "github-actions"
     directory: "/"
