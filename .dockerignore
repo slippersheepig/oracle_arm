@@ -1,3 +1,9 @@
 .git
+.github
+.dockerignore
 Dockerfile
 README.md
+__pycache__
+*.py[cod]
+.env
+data
